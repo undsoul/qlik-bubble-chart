@@ -1,4 +1,5 @@
 # Qlik Bubble Chart Extension
+![Uploading image.png…]()
 
 A powerful, interactive hierarchical bubble chart visualization for Qlik Sense, built with D3.js v7.
 
