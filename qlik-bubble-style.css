@@ -1,0 +1,59 @@
+/* qlik-bubble-style.css */
+
+.qv-object-qlik-bubble-chart {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+.qv-object-qlik-bubble-chart svg {
+    width: 100%;
+    height: 100%;
+}
+
+/* Bubble styles */
+.qv-object-qlik-bubble-chart .node {
+    cursor: pointer;
+}
+
+.qv-object-qlik-bubble-chart .node circle {
+    /* Don't set fill here - let D3 handle it */
+    transition: all 0.3s ease;
+}
+
+.qv-object-qlik-bubble-chart .node text {
+    font-family: Arial, sans-serif;
+    text-anchor: middle;
+    pointer-events: none;
+    user-select: none;
+}
+
+/* Tooltip styles */
+.bubble-tooltip {
+    position: absolute;
+    text-align: left;
+    padding: 10px;
+    font-size: 12px;
+    background: rgba(0, 0, 0, 0.9);
+    color: white;
+    border-radius: 5px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s;
+    z-index: 10000;
+}
+
+/* Legend styles */
+.qv-object-qlik-bubble-chart .legend {
+    font-size: 12px;
+}
+
+.qv-object-qlik-bubble-chart .legend-item {
+    cursor: default;
+}
+
+/* Remove any Qlik default fills */
+.qv-object-qlik-bubble-chart .node.node--leaf circle {
+    /* Ensure no fill is set here */
+    stroke-opacity: 1;
+}
