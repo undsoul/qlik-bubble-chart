@@ -32,9 +32,21 @@ A powerful, interactive hierarchical bubble chart visualization for Qlik Sense, 
 3. Refresh your Qlik Sense app
 
 ### Qlik Sense Cloud / Server
-1. Zip the `qlik-bubble-chart` folder
+1. Zip only the extension files (do NOT include the `samples` folder):
+   - `qlik-bubble-chart.js`
+   - `qlik-bubble-properties.js`
+   - `qlik-bubble-style.css`
+   - `qlik-bubble-chart.qext`
+   - `d3.v7.js`
 2. Upload via the Management Console or Developer Hub
 3. The extension will be available in your visualization library
+
+## Sample App
+
+A sample Qlik Sense app is included in the `samples/` folder:
+- **Bubbles.qvf** - Demo app showing the extension in action
+
+Import this app into Qlik Sense Desktop to see the extension working with sample data.
 
 ## Data Requirements
 
@@ -112,7 +124,9 @@ qlik-bubble-chart/
 ├── qlik-bubble-properties.js # Property panel definition
 ├── qlik-bubble-style.css     # Styles
 ├── d3.v7.js                  # D3.js library
-└── README.md                 # This file
+├── README.md                 # This file
+└── samples/
+    └── Bubbles.qvf           # Sample app (not for upload)
 ```
 
 ### Dependencies
