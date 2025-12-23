@@ -2,7 +2,7 @@
 
 <img width="1724" height="1394" alt="image" src="https://github.com/user-attachments/assets/48305e1a-32ae-4ffc-901e-a04f844ee5e2" />
 
-A powerful, interactive hierarchical bubble chart visualization for Qlik Sense, built with D3.js v7.
+A interactive hierarchical bubble chart visualization for Qlik Sense, built with D3.js v7.
 
 ![Version](https://img.shields.io/badge/version-11.0.0-blue.svg)
 ![Qlik Sense](https://img.shields.io/badge/Qlik%20Sense-Compatible-green.svg)
