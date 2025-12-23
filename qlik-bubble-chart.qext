@@ -2,7 +2,7 @@
     "name": "Bubble Viz w/Hierarchy",
     "description": "Interactive bubble chart visualization using D3.js v7 with rich customization options",
     "type": "visualization",
-    "version": "11.0.0",
+    "version": "12.0.0",
     "author": "MuchachoAI",
     "icon": "Bubble",
     "preview": "",

@@ -4,7 +4,7 @@
 
 A interactive hierarchical bubble chart visualization for Qlik Sense, built with D3.js v7.
 
-![Version](https://img.shields.io/badge/version-11.0.0-blue.svg)
+![Version](https://img.shields.io/badge/version-12.0.0-blue.svg)
 ![Qlik Sense](https://img.shields.io/badge/Qlik%20Sense-Compatible-green.svg)
 ![D3.js](https://img.shields.io/badge/D3.js-v7-orange.svg)
 
@@ -12,7 +12,8 @@ A interactive hierarchical bubble chart visualization for Qlik Sense, built with
 
 - **Hierarchical Bubble Layout**: Visualize data with nested circles using D3.js pack layout
 - **Master Item Color Support**: Automatically fetches and applies colors from Qlik master dimensions
-- **Interactive**: Click to zoom, hover for tooltips, click bubbles to make selections
+- **Multi-Selection with Instant Feedback**: Click multiple bubbles to select them with immediate visual highlighting
+- **Smart Hover Effects**: Scale and highlight on hover, automatically disabled during selection mode
 - **Highly Customizable**: 50+ settings for colors, fonts, sizes, opacity, and more
 - **Performance Optimized**: Configurable maximum bubbles, smart color caching
 - **Responsive**: Adapts to container size with dynamic font scaling
@@ -82,8 +83,8 @@ The extension requires:
 
 ### Appearance Options
 - Bubble opacity, border width, border color
-- Shadow effects with customizable blur and color
-- Hover effects (scale, highlight)
+- Shadow effects with customizable blur and offset
+- Hover effects (scale, highlight) - auto-disabled during selection
 - Group circle visibility and opacity
 
 ### Labels & Text
@@ -103,6 +104,16 @@ The extension requires:
 
 ### Developer Options
 - Debug mode toggle for console logging
+
+## Selection Behavior
+
+The extension provides intuitive multi-selection:
+
+1. **Click a bubble** - Instantly highlights it (full opacity), dims all others (20% opacity)
+2. **Click more bubbles** - Accumulates selections, all selected bubbles stay highlighted
+3. **Click a selected bubble** - Deselects it (toggle behavior)
+4. **Hover effects** - Automatically disabled during selection mode to preserve visual clarity
+5. **Confirm selection** - Use Qlik's confirmation bar to confirm or cancel
 
 ## Master Item Colors
 
@@ -137,6 +148,7 @@ qlik-bubble-chart/
 ### Key Functions
 - `paint()`: Main rendering function called by Qlik
 - `debugLog()`: Conditional logging (enable in Developer Options)
+- `setColorState()`: Helper for managing color fetch state
 - Color fetching via Enigma API for master dimension support
 
 ## Troubleshooting
@@ -156,7 +168,19 @@ qlik-bubble-chart/
 - Disable shadow effects
 - Reduce hover effects
 
+### Selection Issues
+- Selections require confirmation via Qlik's selection bar
+- Visual feedback is instant, but data filters after confirmation
+
 ## Version History
+
+### v12.0.0
+- Multi-selection with instant visual feedback
+- Smart hover effects (auto-disabled during selection mode)
+- Improved selection UX with toggle behavior
+- Code refactoring with centralized CONSTANTS
+- Helper functions to eliminate code duplication
+- Better event handling for hover and click
 
 ### v11.0.0
 - Added master item color support with automatic change detection

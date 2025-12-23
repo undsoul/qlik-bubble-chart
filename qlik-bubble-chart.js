@@ -8,6 +8,131 @@ define([
 ], function (qlik, $, d3, properties) {
     'use strict';
 
+    // ============================================================================
+    // CONSTANTS - All magic numbers and defaults in one place
+    // ============================================================================
+    var CONSTANTS = {
+        TIMING: {
+            RESIZE_DEBOUNCE: 300,
+            ANIMATION_FAST: 200,
+            ANIMATION_MEDIUM: 500,
+            ANIMATION_SLOW: 750
+        },
+        FONT_SCALE: {
+            LABEL: 0.4,
+            VALUE: 0.3,
+            VALUE_SIZE: 0.8,
+            GROUP: 0.1,
+            TRUNCATION: 4
+        },
+        TOOLTIP: {
+            Z_INDEX: 10000,
+            PADDING: '10px',
+            BORDER_RADIUS: '5px',
+            FONT_SIZE: '14px'
+        },
+        DEFAULTS: {
+            MAX_BUBBLES: 50,
+            PACKING_DENSITY: 3,
+            MIN_BUBBLE_SIZE: 20,
+            MAX_BUBBLE_SIZE: 120,
+            BUBBLE_OPACITY: 0.7,
+            STROKE_WIDTH: 2,
+            BORDER_OPACITY: 1,
+            HOVER_OPACITY: 1,
+            SHADOW_BLUR: 10,
+            SHADOW_OFFSET_X: 3,
+            SHADOW_OFFSET_Y: 3,
+            LABEL_SIZE: 12,
+            MIN_SIZE_FOR_LABEL: 20,
+            MIN_SIZE_FOR_VALUE: 30,
+            GROUP_LABEL_SIZE: 16,
+            GROUP_LABEL_OPACITY: 1,
+            MIN_GROUP_SIZE_FOR_LABEL: 50,
+            GROUP_IMAGE_SIZE: 24,
+            GROUP_BUBBLE_OPACITY: 0.1,
+            GROUP_BORDER_OPACITY: 0.3
+        },
+        COLORS: {
+            BACKGROUND: '#FFFFFF',
+            BORDER: '#CCCCCC',
+            LABEL: '#333333',
+            VALUE: '#666666',
+            LEGEND_TEXT: '#333333',
+            SINGLE: '#1f77b4',
+            FALLBACK: ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+        },
+        PALETTES: {
+            Q10: ['#767DF2', '#BF2B17', '#F25C06', '#65AA88', '#039289', '#1A778B', '#FA8907', '#F7BB02', '#D5BD4B', '#17becf'],
+            category10: ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'],
+            category20: ['#1f77b4', '#aec7e8', '#ff7f0e', '#ffbb78', '#2ca02c', '#98df8a', '#d62728', '#ff9896', '#9467bd', '#c5b0d5', '#8c564b', '#c49c94', '#e377c2', '#f7b6d2', '#7f7f7f', '#c7c7c7', '#bcbd22', '#dbdb8d', '#17becf', '#9edae5'],
+            set1: ['#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00', '#ffff33', '#a65628', '#f781bf', '#999999'],
+            set2: ['#66c2a5', '#fc8d62', '#8da0cb', '#e78ac3', '#a6d854', '#ffd92f', '#e5c494', '#b3b3b3'],
+            set3: ['#8dd3c7', '#ffffb3', '#bebada', '#fb8072', '#80b1d3', '#fdb462', '#b3de69', '#fccde5', '#d9d9d9', '#bc80bd', '#ccebc5', '#ffed6f'],
+            dark2: ['#1b9e77', '#d95f02', '#7570b3', '#e7298a', '#66a61e', '#e6ab02', '#a6761d', '#666666'],
+            paired: ['#a6cee3', '#1f78b4', '#b2df8a', '#33a02c', '#fb9a99', '#e31a1c', '#fdbf6f', '#ff7f00', '#cab2d6', '#6a3d9a', '#ffff99', '#b15928'],
+            pastel1: ['#fbb4ae', '#b3cde3', '#ccebc5', '#decbe4', '#fed9a6', '#ffffcc', '#e5d8bd', '#fddaec', '#f2f2f2'],
+            pastel2: ['#b3e2cd', '#fdcdac', '#cbd5e8', '#f4cae4', '#e6f5c9', '#fff2ae', '#f1e2cc', '#cccccc']
+        }
+    };
+
+    // ============================================================================
+    // HELPER FUNCTIONS
+    // ============================================================================
+
+    // Get color from color picker object
+    function getColor(colorObj, defaultColor) {
+        if (colorObj && colorObj.color) {
+            return colorObj.color;
+        }
+        return defaultColor;
+    }
+
+    // Convert ARGB number to hex
+    function argbToHex(argb) {
+        if (argb < 0) {
+            argb = argb >>> 0;
+        }
+        var r = (argb >> 16) & 0xFF;
+        var g = (argb >> 8) & 0xFF;
+        var b = argb & 0xFF;
+        return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+    }
+
+    // Extract color from various formats
+    function extractColorValue(colorEntry) {
+        if (!colorEntry) return null;
+        if (typeof colorEntry === 'string') return colorEntry;
+        if (colorEntry.color) return colorEntry.color;
+        if (colorEntry.qColor) return extractColorValue(colorEntry.qColor);
+        if (typeof colorEntry === 'number') return argbToHex(colorEntry);
+        if (colorEntry.qNum !== undefined && !isNaN(colorEntry.qNum)) return argbToHex(colorEntry.qNum);
+        return null;
+    }
+
+    // Set color state on extension instance (eliminates duplication)
+    function setColorState(self, colors, changeHash, isFetching) {
+        self._fetchingColors = isFetching || false;
+        self._colorsFetched = !isFetching;
+        self._masterItemColors = colors || {};
+        if (changeHash !== undefined) {
+            self._colorChangeHash = changeHash;
+        }
+    }
+
+    // Format large numbers with K/M/B/T suffixes
+    function formatLargeNumber(val, decimals) {
+        decimals = decimals !== undefined ? decimals : 1;
+        if (val >= 1e12) return (val / 1e12).toFixed(decimals) + 'T';
+        if (val >= 1e9) return (val / 1e9).toFixed(decimals) + 'B';
+        if (val >= 1e6) return (val / 1e6).toFixed(decimals) + 'M';
+        if (val >= 1e3) return (val / 1e3).toFixed(decimals) + 'K';
+        return d3.format(',')(val);
+    }
+
+    // ============================================================================
+    // EXTENSION DEFINITION
+    // ============================================================================
     return {
         initialProperties: {
             qHyperCubeDef: {
@@ -61,6 +186,11 @@ define([
             // Extract settings with proper defaults
             var settings = layout.settings || {};
 
+            // Initialize local selection tracker (persists across paint calls)
+            if (!self._localSelections) {
+                self._localSelections = new Set();
+            }
+
             // Debug mode setting
             var debugMode = settings.enableDebug === true;
 
@@ -71,38 +201,30 @@ define([
                 }
             }
 
-            // Helper function to get color from color picker object
-            function getColor(colorObj, defaultColor) {
-                if (colorObj && colorObj.color) {
-                    return colorObj.color;
-                }
-                return defaultColor;
-            }
-            
-            // Get all settings
-            var backgroundColor = getColor(settings.backgroundColor, '#FFFFFF');
-            var borderColor = getColor(settings.borderColor, '#CCCCCC');
-            var labelColor = getColor(settings.labelColor, '#333333');
-            var valueColor = getColor(settings.valueColor, '#666666');
-            var legendTextColor = getColor(settings.legendTextColor, '#333333');
-            var singleColor = getColor(settings.singleColor, '#1f77b4');
-            
-            var maxBubbles = settings.maxBubbles || 50;
+            // Get all settings (using helper functions and CONSTANTS from top level)
+            var backgroundColor = getColor(settings.backgroundColor, CONSTANTS.COLORS.BACKGROUND);
+            var borderColor = getColor(settings.borderColor, CONSTANTS.COLORS.BORDER);
+            var labelColor = getColor(settings.labelColor, CONSTANTS.COLORS.LABEL);
+            var valueColor = getColor(settings.valueColor, CONSTANTS.COLORS.VALUE);
+            var legendTextColor = getColor(settings.legendTextColor, CONSTANTS.COLORS.LEGEND_TEXT);
+            var singleColor = getColor(settings.singleColor, CONSTANTS.COLORS.SINGLE);
+
+            var maxBubbles = settings.maxBubbles || CONSTANTS.DEFAULTS.MAX_BUBBLES;
             debugLog('maxBubbles setting:', maxBubbles, '(from settings:', settings.maxBubbles, ')');
-            var packingDensity = settings.packingDensity !== undefined ? settings.packingDensity : 3;
-            var minBubbleSize = settings.minBubbleSize || 20;
-            var maxBubbleSize = settings.maxBubbleSize || 120;
-            
-            var bubbleOpacity = settings.bubbleOpacity !== undefined ? settings.bubbleOpacity : 0.7;
-            var strokeWidth = settings.strokeWidth !== undefined ? settings.strokeWidth : 2;
-            var borderOpacity = settings.borderOpacity !== undefined ? settings.borderOpacity : 1;
-            
+            var packingDensity = settings.packingDensity !== undefined ? settings.packingDensity : CONSTANTS.DEFAULTS.PACKING_DENSITY;
+            var minBubbleSize = settings.minBubbleSize || CONSTANTS.DEFAULTS.MIN_BUBBLE_SIZE;
+            var maxBubbleSize = settings.maxBubbleSize || CONSTANTS.DEFAULTS.MAX_BUBBLE_SIZE;
+
+            var bubbleOpacity = settings.bubbleOpacity !== undefined ? settings.bubbleOpacity : CONSTANTS.DEFAULTS.BUBBLE_OPACITY;
+            var strokeWidth = settings.strokeWidth !== undefined ? settings.strokeWidth : CONSTANTS.DEFAULTS.STROKE_WIDTH;
+            var borderOpacity = settings.borderOpacity !== undefined ? settings.borderOpacity : CONSTANTS.DEFAULTS.BORDER_OPACITY;
+
             var enableHoverEffect = settings.enableHoverEffect !== false;
-            var hoverOpacity = settings.hoverOpacity !== undefined ? settings.hoverOpacity : 1;
+            var hoverOpacity = settings.hoverOpacity !== undefined ? settings.hoverOpacity : CONSTANTS.DEFAULTS.HOVER_OPACITY;
             var enableShadow = settings.enableShadow || false;
-            var shadowBlur = settings.shadowBlur || 10;
-            var shadowOffsetX = settings.shadowOffsetX || 3;
-            var shadowOffsetY = settings.shadowOffsetY || 3;
+            var shadowBlur = settings.shadowBlur || CONSTANTS.DEFAULTS.SHADOW_BLUR;
+            var shadowOffsetX = settings.shadowOffsetX || CONSTANTS.DEFAULTS.SHADOW_OFFSET_X;
+            var shadowOffsetY = settings.shadowOffsetY || CONSTANTS.DEFAULTS.SHADOW_OFFSET_Y;
             
             var colorMode = settings.colorMode || 'auto';
             var colorPalette = settings.colorPalette || 'Q10';
@@ -116,38 +238,38 @@ define([
             }
             
             var showLabels = settings.showLabels !== false;
-            var labelSize = settings.labelSize || 12;
+            var labelSize = settings.labelSize || CONSTANTS.DEFAULTS.LABEL_SIZE;
             var labelFontFamily = settings.labelFontFamily || 'sans-serif';
             var labelFontWeight = settings.labelFontWeight || 'bold';
             var labelFontStyle = settings.labelFontStyle || 'normal';
-            var minSizeForLabel = settings.minSizeForLabel || 20;
-            
+            var minSizeForLabel = settings.minSizeForLabel || CONSTANTS.DEFAULTS.MIN_SIZE_FOR_LABEL;
+
             var showValues = settings.showValues !== false;
             var valueFontFamily = settings.valueFontFamily || 'sans-serif';
             var valueFontWeight = settings.valueFontWeight || 'normal';
             var valueFontStyle = settings.valueFontStyle || 'normal';
-            var minSizeForValue = settings.minSizeForValue || 30;
-            
+            var minSizeForValue = settings.minSizeForValue || CONSTANTS.DEFAULTS.MIN_SIZE_FOR_VALUE;
+
             var showGroupLabels = settings.showGroupLabels !== false;
             var groupLabelFontFamily = settings.groupLabelFontFamily || 'sans-serif';
             var groupLabelFontWeight = settings.groupLabelFontWeight || 'normal';
             var groupLabelFontStyle = settings.groupLabelFontStyle || 'normal';
-            
+
             var showLegend = settings.showLegend || false;
             var legendPosition = settings.legendPosition || 'right';
-            
+
             var showTooltip = settings.showTooltip !== false;
             var enableZoom = settings.enableZoom !== false;
             var showGroupBubbles = settings.showGroupBubbles !== false;
-            var groupBubbleOpacity = settings.groupBubbleOpacity !== undefined ? settings.groupBubbleOpacity : 0.1;
-            var groupBorderOpacity = settings.groupBorderOpacity !== undefined ? settings.groupBorderOpacity : 0.3;
+            var groupBubbleOpacity = settings.groupBubbleOpacity !== undefined ? settings.groupBubbleOpacity : CONSTANTS.DEFAULTS.GROUP_BUBBLE_OPACITY;
+            var groupBorderOpacity = settings.groupBorderOpacity !== undefined ? settings.groupBorderOpacity : CONSTANTS.DEFAULTS.GROUP_BORDER_OPACITY;
             var showGroupValues = settings.showGroupValues !== false;
-            var groupLabelSize = settings.groupLabelSize || 16;
-            var groupLabelOpacity = settings.groupLabelOpacity !== undefined ? settings.groupLabelOpacity : 1;
+            var groupLabelSize = settings.groupLabelSize || CONSTANTS.DEFAULTS.GROUP_LABEL_SIZE;
+            var groupLabelOpacity = settings.groupLabelOpacity !== undefined ? settings.groupLabelOpacity : CONSTANTS.DEFAULTS.GROUP_LABEL_OPACITY;
             var groupLabelOutline = settings.groupLabelOutline !== false;
-            var minGroupSizeForLabel = settings.minGroupSizeForLabel || 50;
+            var minGroupSizeForLabel = settings.minGroupSizeForLabel || CONSTANTS.DEFAULTS.MIN_GROUP_SIZE_FOR_LABEL;
             var showGroupImages = settings.showGroupImages || false;
-            var groupImageSize = settings.groupImageSize || 24;
+            var groupImageSize = settings.groupImageSize || CONSTANTS.DEFAULTS.GROUP_IMAGE_SIZE;
             var groupImageMapping = {};
             if (settings.groupImageMapping) {
                 try {
@@ -169,28 +291,6 @@ define([
             
             var groupMap = {};
             var masterItemColors = {};
-            
-            // Helper function to convert ARGB number to hex
-            function argbToHex(argb) {
-                if (argb < 0) {
-                    argb = argb >>> 0;
-                }
-                var r = (argb >> 16) & 0xFF;
-                var g = (argb >> 8) & 0xFF;
-                var b = argb & 0xFF;
-                return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
-            }
-
-            // Helper function to extract color from various formats
-            function extractColorValue(colorEntry) {
-                if (!colorEntry) return null;
-                if (typeof colorEntry === 'string') return colorEntry;
-                if (colorEntry.color) return colorEntry.color;
-                if (colorEntry.qColor) return extractColorValue(colorEntry.qColor);
-                if (typeof colorEntry === 'number') return argbToHex(colorEntry);
-                if (colorEntry.qNum !== undefined && !isNaN(colorEntry.qNum)) return argbToHex(colorEntry.qNum);
-                return null;
-            }
 
             // Get unique dimension values for color matching
             function getDimensionValues() {
@@ -324,10 +424,7 @@ define([
                             // If we found colors from properties, use them
                             if (Object.keys(masterItemColors).length > 0) {
                                 debugLog(' Colors from dimension properties:', masterItemColors);
-                                self._colorsFetched = true;
-                                self._fetchingColors = false;
-                                self._masterItemColors = masterItemColors;
-                                self._colorChangeHash = currentChangeHash; // Store hash to detect future changes
+                                setColorState(self, masterItemColors, currentChangeHash);
                                 return self.paint($element, layout);
                             }
 
@@ -343,10 +440,7 @@ define([
                                 extractColorsFromColorMap(colorMapLayout, dimensionValues);
                                 debugLog(' Colors from ColorMapModel:', masterItemColors);
 
-                                self._colorsFetched = true;
-                                self._fetchingColors = false;
-                                self._masterItemColors = masterItemColors;
-                                self._colorChangeHash = currentChangeHash; // Store hash to detect future changes
+                                setColorState(self, masterItemColors, currentChangeHash);
                                 debugLog(' Stored new changeHash:', currentChangeHash);
                                 return self.paint($element, layout);
                             }).catch(function(colorMapErr) {
@@ -355,10 +449,7 @@ define([
                                 extractMasterDimColors(masterDimLayout, dimensionValues);
                                 debugLog(' Fallback colors from layout:', masterItemColors);
 
-                                self._colorsFetched = true;
-                                self._fetchingColors = false;
-                                self._masterItemColors = masterItemColors;
-                                self._colorChangeHash = currentChangeHash; // Store hash to detect future changes
+                                setColorState(self, masterItemColors, currentChangeHash);
                                 return self.paint($element, layout);
                             });
                         });
@@ -368,10 +459,7 @@ define([
 
                         debugLog(' Colors from master dimension:', masterItemColors);
 
-                        self._colorsFetched = true;
-                        self._fetchingColors = false;
-                        self._masterItemColors = masterItemColors;
-                        self._colorChangeHash = currentChangeHash; // Store hash to detect future changes
+                        setColorState(self, masterItemColors, currentChangeHash);
 
                         // Repaint with colors
                         self.paint($element, layout);
@@ -394,22 +482,18 @@ define([
 
                         debugLog(' Colors from fallback:', masterItemColors);
 
-                        self._colorsFetched = true;
-                        self._fetchingColors = false;
-                        self._masterItemColors = masterItemColors;
+                        setColorState(self, masterItemColors);
                         self.paint($element, layout);
 
                     }).catch(function(err2) {
                         console.error('[BubbleChart] Fallback also failed:', err2);
                         // Continue without master colors
-                        self._fetchingColors = false;
-                        self._colorsFetched = true;
-                        self._masterItemColors = {};
+                        setColorState(self, {});
                         self.paint($element, layout);
                     });
                 });
 
-                $element.html('<div style="text-align: center; padding: 20px;">Loading colors from master dimension...</div>');
+                $element.html('<div style="display: flex; align-items: center; justify-content: center; height: 100%; min-height: 200px;"><div style="text-align: center;"><div style="border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 10px;"></div><style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style><span style="color: #666;">Loading...</span></div></div>');
                 return qlik.Promise.resolve();
             }
 
@@ -678,9 +762,7 @@ define([
 
                     debugLog(' Final merged colors:', masterItemColors);
 
-                    self._colorsFetched = true;
-                    self._fetchingColors = false;
-                    self._masterItemColors = masterItemColors;
+                    setColorState(self, masterItemColors);
 
                     // Repaint with colors
                     self.paint($element, layout);
@@ -714,16 +796,14 @@ define([
                         }
                     });
 
-                    self._fetchingColors = false;
-                    self._colorsFetched = true;
-                    self._masterItemColors = masterItemColors;
+                    setColorState(self, masterItemColors);
 
                     // Repaint
                     self.paint($element, layout);
                 });
 
-                // Show loading message while fetching
-                $element.html('<div style="text-align: center; padding: 20px;">Loading colors...</div>');
+                // Show loading spinner while fetching
+                $element.html('<div style="display: flex; align-items: center; justify-content: center; height: 100%; min-height: 200px;"><div style="text-align: center;"><div style="border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 10px;"></div><style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style><span style="color: #666;">Loading...</span></div></div>');
                 return qlik.Promise.resolve();
             }
 
@@ -773,8 +853,7 @@ define([
                 });
 
                 debugLog(' Colors from data rows:', masterItemColors);
-                self._colorsFetched = true;
-                self._masterItemColors = masterItemColors;
+                setColorState(self, masterItemColors);
             }
 
             // Use cached colors if available
@@ -848,6 +927,13 @@ define([
                     groupMap[groupName].totalValue += value;
                     groupMap[groupName].formattedValues.push(formattedValue);
                     
+                    // Get selection state: S=Selected, O=Optional, X=Excluded, A=Alternative, L=Locked
+                    var selectionState = row[0].qState || 'O';
+                    var isSelected = selectionState === 'S' || selectionState === 'L';
+                    var isExcluded = selectionState === 'X';
+
+                    debugLog(' Item:', itemName, 'State:', selectionState, 'Selected:', isSelected);
+
                     // Add item to group
                     groupMap[groupName].children.push({
                         name: itemName,
@@ -856,7 +942,10 @@ define([
                         elem: elem,
                         group: groupName,
                         color: itemColor,
-                        scaledSize: sizeScale(value) // Pre-calculate scaled size
+                        scaledSize: sizeScale(value), // Pre-calculate scaled size
+                        qState: selectionState,
+                        isSelected: isSelected,
+                        isExcluded: isExcluded
                     });
                     
                     processedRows++;
@@ -922,9 +1011,8 @@ define([
                         return groupObj.color;
                     }
                     var index = groups.indexOf(group);
-                    var defaultColors = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"];
-                    debugLog(' Using fallback color for ' + group + ':', defaultColors[index % defaultColors.length]);
-                    return defaultColors[index % defaultColors.length];
+                    debugLog(' Using fallback color for ' + group + ':', CONSTANTS.COLORS.FALLBACK[index % CONSTANTS.COLORS.FALLBACK.length]);
+                    return CONSTANTS.COLORS.FALLBACK[index % CONSTANTS.COLORS.FALLBACK.length];
                 };
             } else if (colorMode === 'single') {
                 colorScale = function() { return singleColor; };
@@ -934,20 +1022,7 @@ define([
                 };
             } else {
                 // Auto mode with selected palette
-                var colorPalettes = {
-                    'Q10': ["#767DF2", "#BF2B17", "#F25C06", "#65AA88", "#039289", "#1A778B", "#FA8907", "#F7BB02", "#D5BD4B", "#17becf"],
-                    'category10': ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"],
-                    'category20': ["#1f77b4", "#aec7e8", "#ff7f0e", "#ffbb78", "#2ca02c", "#98df8a", "#d62728", "#ff9896", "#9467bd", "#c5b0d5", "#8c564b", "#c49c94", "#e377c2", "#f7b6d2", "#7f7f7f", "#c7c7c7", "#bcbd22", "#dbdb8d", "#17becf", "#9edae5"],
-                    'set1': ["#e41a1c", "#377eb8", "#4daf4a", "#984ea3", "#ff7f00", "#ffff33", "#a65628", "#f781bf", "#999999"],
-                    'set2': ["#66c2a5", "#fc8d62", "#8da0cb", "#e78ac3", "#a6d854", "#ffd92f", "#e5c494", "#b3b3b3"],
-                    'set3': ["#8dd3c7", "#ffffb3", "#bebada", "#fb8072", "#80b1d3", "#fdb462", "#b3de69", "#fccde5", "#d9d9d9", "#bc80bd", "#ccebc5", "#ffed6f"],
-                    'dark2': ["#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e", "#e6ab02", "#a6761d", "#666666"],
-                    'paired': ["#a6cee3", "#1f78b4", "#b2df8a", "#33a02c", "#fb9a99", "#e31a1c", "#fdbf6f", "#ff7f00", "#cab2d6", "#6a3d9a", "#ffff99", "#b15928"],
-                    'pastel1': ["#fbb4ae", "#b3cde3", "#ccebc5", "#decbe4", "#fed9a6", "#ffffcc", "#e5d8bd", "#fddaec", "#f2f2f2"],
-                    'pastel2': ["#b3e2cd", "#fdcdac", "#cbd5e8", "#f4cae4", "#e6f5c9", "#fff2ae", "#f1e2cc", "#cccccc"]
-                };
-                
-                var selectedColors = colorPalettes[colorPalette] || colorPalettes['Q10'];
+                var selectedColors = CONSTANTS.PALETTES[colorPalette] || CONSTANTS.PALETTES.Q10;
                 colorScale = function(group) {
                     var index = groups.indexOf(group);
                     return selectedColors[index % selectedColors.length];
@@ -977,9 +1052,11 @@ define([
                 .attr('height', height)
                 .style('background-color', backgroundColor);
             
+            // Create defs for filters
+            var defs = svg.append('defs');
+
             // Add shadow filter if enabled
             if (enableShadow) {
-                var defs = svg.append('defs');
                 var filter = defs.append('filter')
                     .attr('id', 'bubble-shadow')
                     .attr('x', '-50%')
@@ -1031,16 +1108,10 @@ define([
                 .style('pointer-events', 'none')
                 .style('opacity', 0)
                 .style('font-size', '14px')
-                .style('z-index', 10000);
+                .style('z-index', CONSTANTS.TOOLTIP.Z_INDEX);
             
-            // Format value function
-            function formatValue(val) {
-                if (val >= 1e12) return (val / 1e12).toFixed(1) + 'T';
-                if (val >= 1e9) return (val / 1e9).toFixed(1) + 'B';
-                if (val >= 1e6) return (val / 1e6).toFixed(1) + 'M';
-                if (val >= 1e3) return (val / 1e3).toFixed(1) + 'K';
-                return d3.format(",")(val);
-            }
+            // Format value function (uses helper from top level)
+            var formatValue = formatLargeNumber;
             
             // Center nodes around 0,0
             nodes.forEach(function(d) {
@@ -1059,6 +1130,26 @@ define([
                 })
                 .attr('transform', d => 'translate(' + d.x + ',' + d.y + ')');
             
+            // Check if there's an active selection (mix of states)
+            var hasActiveSelection = false;
+            var selectedCount = 0;
+            nodes.forEach(function(n) {
+                if (n.data && n.data.qState && n.data.qState !== 'O') {
+                    hasActiveSelection = true;
+                    if (n.data.isSelected) selectedCount++;
+                }
+            });
+
+            // If Qlik has confirmed selections, clear local selections (they're now in Qlik's state)
+            if (hasActiveSelection) {
+                self._localSelections.clear();
+            }
+
+            // Check for local pending selections
+            var hasLocalSelections = self._localSelections && self._localSelections.size > 0;
+
+            debugLog('Selection state: hasActiveSelection =', hasActiveSelection, ', selectedCount =', selectedCount, ', localSelections =', self._localSelections.size);
+
             // Add circles
             var circles = node.append('circle')
                 .attr('r', d => d.r)
@@ -1074,6 +1165,15 @@ define([
                 .attr('fill-opacity', function(d) {
                     if (!d.parent) return 0;
                     if (d.children) return showGroupBubbles ? groupBubbleOpacity : 0;
+                    // Check local selections first (for pending clicks)
+                    if (hasLocalSelections && d.data) {
+                        return self._localSelections.has(d.data.name) ? 1 : 0.2;
+                    }
+                    // Then check Qlik's confirmed selection state
+                    if (hasActiveSelection && d.data) {
+                        if (d.data.isSelected) return 1;
+                        return 0.2;
+                    }
                     return bubbleOpacity;
                 })
                 .attr('stroke', function(d) {
@@ -1089,61 +1189,112 @@ define([
                 .attr('stroke-opacity', function(d) {
                     if (!d.parent) return 0;
                     if (d.children) return showGroupBubbles ? groupBorderOpacity : 0;
+                    // Check local selections first
+                    if (hasLocalSelections && d.data) {
+                        return self._localSelections.has(d.data.name) ? borderOpacity : 0.2;
+                    }
+                    // Then check Qlik's confirmed selection state
+                    if (hasActiveSelection && d.data && !d.data.isSelected) return 0.2;
                     return borderOpacity;
                 })
                 .style('cursor', function(d) {
                     return d.children ? 'default' : 'pointer';
-                });
-            
-            // Apply shadow if enabled
-            if (enableShadow) {
-                circles.style('filter', 'url(#bubble-shadow)');
-            }
-            
-            // Add interactions for leaf nodes (items)
-            node.filter(d => !d.children)
+                })
+                .style('pointer-events', function(d) {
+                    return d.children ? 'none' : 'all';
+                })
+                .style('filter', function(d) {
+                    // Apply shadow if enabled
+                    if (enableShadow && !d.children) {
+                        return 'url(#bubble-shadow)';
+                    }
+                    return 'none';
+                })
                 .on('click', function(event, d) {
+                    if (d.children) return; // Ignore group bubbles
                     event.stopPropagation();
+
+                    // Toggle this item in local selection tracker
+                    var itemKey = d.data.name;
+                    if (self._localSelections.has(itemKey)) {
+                        self._localSelections.delete(itemKey);
+                    } else {
+                        self._localSelections.add(itemKey);
+                    }
+
+                    var hasLocalSelections = self._localSelections.size > 0;
+
+                    // Immediate visual feedback - highlight all selected items
+                    circles.filter(dd => !dd.children)
+                        .attr('fill-opacity', function(dd) {
+                            if (!hasLocalSelections) return bubbleOpacity;
+                            return self._localSelections.has(dd.data.name) ? 1 : 0.2;
+                        })
+                        .attr('stroke-opacity', function(dd) {
+                            if (!hasLocalSelections) return borderOpacity;
+                            return self._localSelections.has(dd.data.name) ? borderOpacity : 0.2;
+                        });
+
+                    // Dim all text labels except selected ones
+                    node.selectAll('text')
+                        .style('opacity', function() {
+                            if (!hasLocalSelections) return 1;
+                            var parentData = d3.select(this.parentNode).datum();
+                            if (!parentData || !parentData.data) return 0.2;
+                            return self._localSelections.has(parentData.data.name) ? 1 : 0.2;
+                        });
+
+                    // Make the selection in Qlik
                     if (d.data.elem !== undefined) {
-                        self.selectValues(0, [d.data.elem], true);
+                        self.selectValues(0, [d.data.elem], true); // true = toggle mode to accumulate
                     }
                 })
                 .on('mouseover', function(event, d) {
-                    if (showTooltip) {
-                        tooltip.transition()
-                            .duration(200)
-                            .style('opacity', .9);
-                        
-                        tooltip.html(
-                            '<strong>' + d.data.name + '</strong><br/>' +
-                            'Group: ' + d.data.group + '<br/>' +
-                            'Value: ' + d.data.formattedValue // Use formatted value
-                        )
-                        .style('left', (event.pageX + 10) + 'px')
-                        .style('top', (event.pageY - 28) + 'px');
-                    }
-                    
-                    if (enableHoverEffect) {
-                        d3.select(this).select('circle')
+                    if (d.children) return;
+
+                    // Check selection mode at event time (not at handler creation time)
+                    var inSelectionMode = self._localSelections && self._localSelections.size > 0;
+
+                    // Visual hover effect (if enabled AND not in selection mode)
+                    if (enableHoverEffect && !inSelectionMode) {
+                        d3.select(this)
                             .transition()
-                            .duration(200)
-                            .attr('fill-opacity', hoverOpacity)
-                            .attr('stroke-width', strokeWidth + 2);
+                            .duration(150)
+                            .attr('transform', 'scale(1.08)')
+                            .attr('stroke-width', strokeWidth + 2)
+                            .attr('fill-opacity', hoverOpacity);
+                    }
+
+                    if (showTooltip) {
+                        tooltip
+                            .style('opacity', .9)
+                            .style('left', (event.pageX + 10) + 'px')
+                            .style('top', (event.pageY - 28) + 'px')
+                            .html(
+                                '<strong>' + d.data.name + '</strong><br/>' +
+                                'Group: ' + d.data.group + '<br/>' +
+                                'Value: ' + d.data.formattedValue
+                            );
                     }
                 })
                 .on('mouseout', function(event, d) {
-                    if (showTooltip) {
-                        tooltip.transition()
-                            .duration(500)
-                            .style('opacity', 0);
-                    }
-                    
-                    if (enableHoverEffect) {
-                        d3.select(this).select('circle')
+                    if (d.children) return;
+
+                    // Check selection mode at event time (not at handler creation time)
+                    var inSelectionMode = self._localSelections && self._localSelections.size > 0;
+
+                    // Reset hover effect (if enabled AND not in selection mode)
+                    if (enableHoverEffect && !inSelectionMode) {
+                        d3.select(this)
                             .transition()
-                            .duration(200)
-                            .attr('fill-opacity', bubbleOpacity)
-                            .attr('stroke-width', strokeWidth);
+                            .duration(150)
+                            .attr('transform', 'scale(1)')
+                            .attr('stroke-width', strokeWidth)
+                            .attr('fill-opacity', bubbleOpacity);
+                    }
+
+                    if (showTooltip) {
+                        tooltip.style('opacity', 0);
                     }
                 });
             
@@ -1156,21 +1307,30 @@ define([
                     .style('fill', labelColor)
                     .style('font-size', function(d) {
                         // Dynamic font size based on bubble radius
-                        var fontSize = Math.min(labelSize, d.r * 0.4);
+                        var fontSize = Math.min(labelSize, d.r * CONSTANTS.FONT_SCALE.LABEL);
                         return fontSize + 'px';
                     })
                     .style('font-weight', 'bold')
                     .style('font-family', 'sans-serif')
                     .style('pointer-events', 'none')
+                    .style('opacity', function(d) {
+                        // Check local selections first
+                        if (hasLocalSelections && d.data) {
+                            return self._localSelections.has(d.data.name) ? 1 : 0.2;
+                        }
+                        // Then check Qlik's confirmed selection state
+                        if (hasActiveSelection && d.data && !d.data.isSelected) return 0.2;
+                        return 1;
+                    })
                     .text(function(d) {
                         // Dynamic text truncation based on bubble size
-                        var maxChars = Math.floor(d.r / 4);
+                        var maxChars = Math.floor(d.r / CONSTANTS.FONT_SCALE.TRUNCATION);
                         if (d.data.name.length > maxChars && maxChars > 3) {
                             return d.data.name.substring(0, maxChars - 2) + '..';
                         }
                         return d.data.name;
                     });
-                
+
                 // Add values with responsive sizing
                 if (showValues) {
                     node.filter(d => !d.children && d.r > minSizeForValue)
@@ -1180,13 +1340,22 @@ define([
                         .style('fill', valueColor)
                         .style('font-size', function(d) {
                             // Dynamic font size for values
-                            var fontSize = Math.min(labelSize * 0.8, d.r * 0.3);
+                            var fontSize = Math.min(labelSize * CONSTANTS.FONT_SCALE.VALUE_SIZE, d.r * CONSTANTS.FONT_SCALE.VALUE);
                             return fontSize + 'px';
                         })
                         .style('font-weight', valueFontWeight)
                         .style('font-style', valueFontStyle)
                         .style('font-family', valueFontFamily)
                         .style('pointer-events', 'none')
+                        .style('opacity', function(d) {
+                            // Check local selections first
+                            if (hasLocalSelections && d.data) {
+                                return self._localSelections.has(d.data.name) ? 1 : 0.2;
+                            }
+                            // Then check Qlik's confirmed selection state
+                            if (hasActiveSelection && d.data && !d.data.isSelected) return 0.2;
+                            return 1;
+                        })
                         .text(d => d.data.formattedValue); // Use Qlik's formatted value directly
                 }
                 
@@ -1243,7 +1412,7 @@ define([
                         .style('fill', d => colorScale(d.data.name))
                         .style('font-size', function(d) {
                             // Keep font size reasonable but scale slightly with circle size
-                            var fontSize = Math.min(groupLabelSize, Math.max(12, d.r * 0.1));
+                            var fontSize = Math.min(groupLabelSize, Math.max(CONSTANTS.DEFAULTS.LABEL_SIZE, d.r * CONSTANTS.FONT_SCALE.GROUP));
                             return fontSize + 'px';
                         })
                         .style('font-weight', groupLabelFontWeight)
@@ -1313,72 +1482,8 @@ define([
                     .text(d => d);
             }
             
-            // Add zoom behavior if enabled (fixed to work with new centering)
-            if (enableZoom) {
-                var view;
-                
-                function zoomTo(v) {
-                    var k = diameter / v[2];
-                    
-                    view = v;
-                    
-                    node.transition()
-                        .duration(750)
-                        .attr('transform', function(d) {
-                            return 'translate(' + ((d.x - v[0]) * k) + ',' + ((d.y - v[1]) * k) + ')';
-                        });
-                    
-                    circles.transition()
-                        .duration(750)
-                        .attr('r', function(d) {
-                            return d.r * k;
-                        });
-                    
-                    // Update text sizes on zoom
-                    node.selectAll('text')
-                        .transition()
-                        .duration(750)
-                        .style('font-size', function(d) {
-                            var baseSize = parseFloat(d3.select(this).style('font-size'));
-                            return (baseSize * k) + 'px';
-                        })
-                        .attr('y', function() {
-                            // Scale Y position for group labels
-                            var currentY = parseFloat(d3.select(this).attr('y')) || 0;
-                            return currentY * k;
-                        });
-                }
-                
-                function zoom(event, d) {
-                    var focus = [d.x, d.y, d.r * 2];
-                    
-                    d3.transition()
-                        .duration(750)
-                        .tween('zoom', function() {
-                            var i = d3.interpolateZoom(view, focus);
-                            return function(t) { zoomTo(i(t)); };
-                        });
-                    
-                    event.stopPropagation();
-                }
-                
-                function reset(event) {
-                    zoom(event, root);
-                }
-                
-                node.on('click', function(event, d) {
-                    if (!d.children && d.data.elem !== undefined) {
-                        self.selectValues(0, [d.data.elem], true);
-                    } else if (d.parent && d !== root) {
-                        zoom(event, d);
-                    }
-                });
-                
-                svg.style('cursor', 'pointer')
-                    .on('click', reset);
-                
-                zoomTo([root.x, root.y, root.r * 2]);
-            }
+            // Zoom is disabled - was causing usability issues
+            // Users can still click bubbles to select them
             
             // Handle resize
             var resizeTimer;
@@ -1386,7 +1491,7 @@ define([
                 clearTimeout(resizeTimer);
                 resizeTimer = setTimeout(function() {
                     self.paint($element, layout);
-                }, 300);
+                }, CONSTANTS.TIMING.RESIZE_DEBOUNCE);
             });
             
             // Cleanup
